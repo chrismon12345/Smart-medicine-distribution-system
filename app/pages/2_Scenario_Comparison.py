@@ -21,11 +21,12 @@ from app.labels import (
     GLOSSARY,
 )
 from app.state import render_sidebar_filters
+from app.theme import inject_custom_theme, render_brand_header, render_system_status_bar, apply_plotly_theme
 
 st.set_page_config(page_title="Scenario Comparison - Policy Benchmarks", page_icon="📊", layout="wide")
 
-st.title("📊 Scenario Comparison & Policy Benchmarking")
-st.markdown("**Cross-Policy Empirical Evaluation across Operating Scenarios, Outbreaks & Disruption Shocks**")
+inject_custom_theme()
+render_brand_header(subtitle="Policy Benchmarking & Stress Testing • Outbreaks, Supplier Shocks & Epidemic Surges")
 
 render_sample_banner()
 
@@ -82,7 +83,6 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
             error_y="stockout_days_std" if "stockout_days_std" in subset_df.columns else None,
             color="Policy",
             barmode="group",
-            title="Stockout Duration (Facility-Days with Unmet Need)",
             labels={"stockout_days_mean": "Stockout Days (Mean ± Std)"},
             color_discrete_map={
                 get_policy_display("optimizer"): "#10b981",
@@ -90,7 +90,7 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
                 get_policy_display("no_transfer"): "#ef4444",
             },
         )
-        fig_stockout.update_layout(height=340, margin=dict(l=20, r=20, t=30, b=20))
+        fig_stockout = apply_plotly_theme(fig_stockout, title="Stockout Duration (Facility-Days with Unmet Need)", height=330)
         st.plotly_chart(fig_stockout, use_container_width=True)
 
     with c2:
@@ -100,7 +100,6 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
             y="Fill Rate (%)",
             color="Policy",
             barmode="group",
-            title="Patient Prescription Fill Rate (%)",
             labels={"Fill Rate (%)": "Fill Rate (%)"},
             color_discrete_map={
                 get_policy_display("optimizer"): "#10b981",
@@ -108,7 +107,8 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
                 get_policy_display("no_transfer"): "#ef4444",
             },
         )
-        fig_fill.update_layout(height=340, yaxis_range=[0, 105], margin=dict(l=20, r=20, t=30, b=20))
+        fig_fill = apply_plotly_theme(fig_fill, title="Patient Prescription Fill Rate (%)", height=330)
+        fig_fill.update_layout(yaxis_range=[0, 105])
         st.plotly_chart(fig_fill, use_container_width=True)
 
     c3, c4 = st.columns(2)
@@ -121,7 +121,6 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
             error_y="wastage_units_std" if "wastage_units_std" in subset_df.columns else None,
             color="Policy",
             barmode="group",
-            title="Expired Medicine Units Written Off",
             labels={"wastage_units_mean": "Wastage Units (Mean ± Std)"},
             color_discrete_map={
                 get_policy_display("optimizer"): "#10b981",
@@ -129,7 +128,7 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
                 get_policy_display("no_transfer"): "#ef4444",
             },
         )
-        fig_waste.update_layout(height=340, margin=dict(l=20, r=20, t=30, b=20))
+        fig_waste = apply_plotly_theme(fig_waste, title="Expired Medicine Units Written Off", height=330)
         st.plotly_chart(fig_waste, use_container_width=True)
 
     with c4:
@@ -139,7 +138,6 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
             y="transport_cost_mean",
             color="Policy",
             barmode="group",
-            title="Logistics & Transport Cost (₹)",
             labels={"transport_cost_mean": "Transport Cost (₹)"},
             color_discrete_map={
                 get_policy_display("optimizer"): "#10b981",
@@ -147,7 +145,7 @@ def render_scenario_charts(subset_df: pd.DataFrame, category_title: str):
                 get_policy_display("no_transfer"): "#ef4444",
             },
         )
-        fig_cost.update_layout(height=340, margin=dict(l=20, r=20, t=30, b=20))
+        fig_cost = apply_plotly_theme(fig_cost, title="Logistics & Transport Cost (₹)", height=330)
         st.plotly_chart(fig_cost, use_container_width=True)
 
 

@@ -113,6 +113,8 @@ def test_all_app_pages_render_without_exception():
     pages = [
         "app/Home.py",
         "app/pages/1_Hospital_Administrator.py",
+        "app/pages/2_Expiry_Aware_Optimizer.py",
+        "app/pages/2_Network_Cascading_Predictor.py",
         "app/pages/2_Scenario_Comparison.py",
         "app/pages/3_Replay.py",
         "app/pages/4_Model_Evaluation.py",

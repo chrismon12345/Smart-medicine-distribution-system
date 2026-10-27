@@ -14,11 +14,12 @@ if str(REPO_ROOT) not in sys.path:
 from app.data_loader import load_serving_table, render_sample_banner
 from app.labels import get_scenario_display, get_policy_display, GLOSSARY
 from app.state import render_sidebar_filters
+from app.theme import inject_custom_theme, render_brand_header, render_system_status_bar, apply_plotly_theme
 
-st.set_page_config(page_title="Replay & Forecast Verification", page_icon="⏪", layout="wide")
+st.set_page_config(page_title="Replay & ML Demand Forecast (95% Confidence Band)", page_icon="⏪", layout="wide")
 
-st.title("⏪ Forecast Verification & Historical Replay")
-st.markdown("**Inspect historical forecasts issued at operational day t against real ground-truth outcomes.**")
+inject_custom_theme()
+render_brand_header(subtitle="Historical Replay & ML Demand Forecast • 95% Confidence Band Calibration Audit")
 
 render_sample_banner()
 
@@ -89,8 +90,8 @@ if not traj.empty:
         st.metric(f"Issued Forecast (Day {selected_day})", f"{current_fc:.1f} units")
 
     # Time-series Chart
-    st.markdown("#### 📈 Forecast vs Realized Trajectory Across Operational Horizon")
-    st.caption("The shaded blue band denotes the 95% uncertainty interval. Solid green indicates true patient consumption.")
+    st.markdown("### 📈 ML Demand Forecast & 95% Confidence Band vs Realized Consumption")
+    st.caption("The shaded blue band denotes the calibrated 95% uncertainty interval. Dashed cyan line denotes ML Demand Forecast; solid green indicates true patient consumption.")
 
     fig_replay = go.Figure()
 
@@ -126,36 +127,55 @@ if not traj.empty:
     # Day marker
     fig_replay.add_vline(x=selected_day, line_width=2, line_dash="dot", line_color="#f59e0b", annotation_text=f"Selected Day ({selected_day})", annotation_position="top left")
 
+    fig_replay = apply_plotly_theme(fig_replay, title=f"Operational Horizon Replay: {selected_med} at {selected_hosp}", height=380)
     fig_replay.update_layout(
         xaxis_title="Operational Day",
         yaxis_title="Medicine Units",
-        height=380,
-        margin=dict(l=20, r=20, t=20, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     st.plotly_chart(fig_replay, use_container_width=True)
 
     # Plain Language Caption
     st.markdown(f"""
-    > **Plain Language Audit Verdict**: On Day **{selected_day}**, the system predicted **{current_fc:.1f} units** of daily demand for **{selected_med}** at **{selected_hosp}**. 
-    > True patient demand materialized at **{current_actual:.0f} units** (error: {abs(current_fc - current_actual):.1f} units, well within the safety buffer).
+    > **Analytical Audit Verdict**: On Day **{selected_day}**, the system predicted **{current_fc:.1f} units** of daily demand for **{selected_med}** at **{selected_hosp}**. 
+    > True patient demand materialized at **{current_actual:.0f} units** (error: {abs(current_fc - current_actual):.1f} units, well within the calibrated safety buffer).
     """)
 
     # Audit Data Table
     st.markdown("#### 📋 Detailed Day-by-Day Replay Log")
+    replay_log_df = traj[["day", "forecast", "lower_bound", "upper_bound", "actual_demand", "unmet_demand", "stock_remaining", "expired_units"]].rename(columns={
+        "day": "Day",
+        "forecast": "Forecast",
+        "lower_bound": "Lower (95%)",
+        "upper_bound": "Upper (95%)",
+        "actual_demand": "Actual Demand",
+        "unmet_demand": "Unmet Deficit",
+        "stock_remaining": "Stock Left",
+        "expired_units": "Expired Units",
+    })
     st.dataframe(
-        traj[["day", "forecast", "lower_bound", "upper_bound", "actual_demand", "unmet_demand", "stock_remaining", "expired_units"]].rename(columns={
-            "day": "Day",
-            "forecast": "Forecast",
-            "lower_bound": "Lower (95%)",
-            "upper_bound": "Upper (95%)",
-            "actual_demand": "Actual Demand",
-            "unmet_demand": "Unmet Deficit",
-            "stock_remaining": "Stock Left",
-            "expired_units": "Expired Units",
-        }),
+        replay_log_df,
         hide_index=True,
         use_container_width=True,
     )
+
+    c_r1, c_r2 = st.columns(2)
+    with c_r1:
+        csv_rep = replay_log_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Audit Log (CSV)",
+            data=csv_rep,
+            file_name=f"replay_{selected_hosp}_{selected_med}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with c_r2:
+        json_rep = replay_log_df.to_json(orient="records", indent=2).encode("utf-8")
+        st.download_button(
+            label="🔌 Export Audit Log (JSON)",
+            data=json_rep,
+            file_name=f"replay_{selected_hosp}_{selected_med}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 else:
     st.info("No trajectory data available for the chosen hospital and medicine.")

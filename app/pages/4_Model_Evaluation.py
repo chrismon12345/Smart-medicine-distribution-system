@@ -13,11 +13,12 @@ if str(REPO_ROOT) not in sys.path:
 from app.data_loader import load_serving_table, render_sample_banner
 from app.labels import GLOSSARY
 from app.state import render_sidebar_filters
+from app.theme import inject_custom_theme, render_brand_header, render_system_status_bar, apply_plotly_theme
 
 st.set_page_config(page_title="Model Evaluation & Ablations", page_icon="🔬", layout="wide")
 
-st.title("🔬 Model Evaluation, Baselines & Ablation Suite")
-st.markdown("**Strict Walk-Forward Cross-Validation, Baseline Comparisons & Theoretical Oracle Bounds**")
+inject_custom_theme()
+render_brand_header(subtitle="Model Evaluation, Baselines & Ablations • Walk-Forward Cross-Validation Suite")
 
 render_sample_banner()
 
@@ -129,12 +130,12 @@ if not eval_fc.empty:
             eval_fc,
             x="model",
             y="wape",
-            title="WAPE Comparison Across Forecasting Models (Lower is Better)",
             labels={"wape": "WAPE Error", "model": "Model"},
             color="wape",
             color_continuous_scale="Tealgrn_r",
         )
-        fig_wape.update_layout(height=260, margin=dict(l=10, r=10, t=30, b=30), showlegend=False)
+        fig_wape = apply_plotly_theme(fig_wape, title="WAPE Error Comparison (Lower is Better)", height=280)
+        fig_wape.update_layout(coloraxis_showscale=False)
         st.plotly_chart(fig_wape, use_container_width=True)
 
     with st.expander("🔍 **Deep-Dive: Outpatient Department (OPD) Lead-Lag Ablation Study**", expanded=False):

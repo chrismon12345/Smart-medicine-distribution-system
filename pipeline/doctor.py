@@ -10,12 +10,12 @@ from typing import Dict, List, Tuple
 
 
 def check_python_version() -> Tuple[bool, str, str]:
-    """Verify Python is >= 3.12."""
+    """Verify Python is >= 3.11."""
     v = sys.version_info
     ver_str = f"{v.major}.{v.minor}.{v.micro}"
-    if v >= (3, 12):
+    if v >= (3, 11):
         return True, f"Python {ver_str}", ""
-    return False, f"Python {ver_str}", "Python >= 3.12 is required. Please install Python 3.12 or later."
+    return False, f"Python {ver_str}", "Python >= 3.11 is required. Please install Python 3.11 or later."
 
 
 def check_java() -> Tuple[bool, str, str]:

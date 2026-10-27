@@ -66,6 +66,12 @@ class RollingHorizonOptimizer:
                     "medicine_id": tr.medicine_id,
                     "batch_id": tr.batch_id,
                     "quantity": tr.quantity,
+                    "transit_days": tr.transit_days,
+                    "distance_km": tr.distance_km,
+                    "estimated_transport_cost": tr.estimated_transport_cost,
+                    "target_shortage": getattr(tr, "target_shortage", 0),
+                    "batch_expiry": getattr(tr, "batch_expiry", None),
+                    "reason": getattr(tr, "reason", ""),
                 })
 
         return actions

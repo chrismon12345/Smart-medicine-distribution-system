@@ -1,7 +1,7 @@
 # Smart Medicine Redistribution System for Government Hospitals
 
 [![CI Status](https://github.com/AthulJithVasudev/Smart_medicine_distribution_system/actions/workflows/ci.yml/badge.svg)](https://github.com/AthulJithVasudev/Smart_medicine_distribution_system/actions)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io)
 
 > **An end-to-end data mining, demand forecasting, and MILP optimization platform that eliminates hospital drug stockouts and minimizes medicine expiry wastage across public healthcare networks.**

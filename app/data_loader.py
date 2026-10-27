@@ -110,7 +110,7 @@ def clear_data_cache() -> None:
 
 
 def load_all_dashboard_data() -> Dict[str, pd.DataFrame]:
-    """Load all 12 published serving tables."""
+    """Load published serving tables."""
     table_names = [
         "scenario_catalog",
         "hospitals",
@@ -124,6 +124,8 @@ def load_all_dashboard_data() -> Dict[str, pd.DataFrame]:
         "evaluation_anomaly",
         "evaluation_optimizer",
         "runs",
+        "cascading_predictions",
+        "cascading_timeline",
     ]
     data = {}
     for name in table_names:

@@ -46,9 +46,9 @@ def init_session_state(state_df: pd.DataFrame) -> None:
 
 
 def render_guided_tour() -> None:
-    """Render the simplified viva/reviewer demonstration tour."""
-    with st.sidebar.expander("🧭 **Guided Viva Tour**", expanded=False):
-        st.caption("Quick demonstration presets for project presentation and viva examination:")
+    """Render high-priority operational workflow presets."""
+    with st.sidebar.expander("⚡ **Executive Operational Presets**", expanded=False):
+        st.caption("Quickly evaluate calibrated operational states across the health network:")
 
         if st.button("1️⃣ Normal Operations", use_container_width=True, help="Observe baseline routine inventory and redistribution"):
             st.session_state["scenario"] = "normal"
@@ -88,7 +88,7 @@ def render_sidebar_filters(
 
     st.sidebar.markdown("### 🎛️ Operational Controls")
 
-    # 1. Guided Tour Expander
+    # 1. Operational Presets Expander
     render_guided_tour()
 
     # 2. Operating Scenario

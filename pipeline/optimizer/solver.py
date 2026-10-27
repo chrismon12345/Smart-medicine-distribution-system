@@ -20,6 +20,9 @@ class TransferRecommendation:
     transit_days: int
     distance_km: float
     estimated_transport_cost: float
+    target_shortage: int = 0
+    batch_expiry: Optional[int] = None
+    reason: str = ""
 
 
 @dataclass
@@ -37,6 +40,7 @@ class RedistributionOptimizer:
     Mathematical optimization engine for medicine redistribution.
     Formulated as a Mixed-Integer Linear Program (MILP) solved using CBC / GLOP.
     Enforces strict receiving caps, batch limits, expiry feasibility, and FEFO tie-breaking.
+    Generates transparent transfer explanations with batch expiry and shortage contexts.
     """
 
     def __init__(
@@ -65,6 +69,7 @@ class RedistributionOptimizer:
         safety_stock_days: int = 5,
         in_transit_incoming: Optional[Dict[Tuple[str, str], int]] = None,
         rural_transit_multiplier: float = 1.0,
+        stock_levels: Optional[Dict[Tuple[str, str], int]] = None,
     ) -> OptimizationResult:
         """
         Formulate and solve the redistribution ILP for the current day across the hospital network.
@@ -80,6 +85,38 @@ class RedistributionOptimizer:
             if not solver:
                 raise RuntimeError("Failed to create OR-Tools mathematical solver.")
 
+        # Graceful fallback: synthesize batches for aggregate inventory if batch details are missing
+        effective_batches: Dict[str, Batch] = dict(batches)
+        if stock_levels:
+            for (h_id, m_id), s_qty in stock_levels.items():
+                if s_qty > 0 and not any(
+                    b.hospital_id == h_id and b.medicine_id == m_id and b.is_valid
+                    for b in effective_batches.values()
+                ):
+                    synth_id = f"BAT_SYNTH_{h_id}_{m_id}"
+                    effective_batches[synth_id] = Batch(
+                        batch_id=synth_id,
+                        medicine_id=m_id,
+                        hospital_id=h_id,
+                        initial_quantity=s_qty,
+                        current_quantity=s_qty,
+                        manufacture_day=current_day,
+                        expiry_day=current_day + self.horizon_days + self.min_shelf_life + 60,
+                        status="active",
+                    )
+                    logger.warning(
+                        f"Missing batch-level expiry for hospital {h_id}, medicine {m_id}. "
+                        "Synthesized aggregate batch with nominal shelf-life."
+                    )
+
+        # Fallback for batches with missing/None expiry_day
+        for b_id, b in effective_batches.items():
+            if getattr(b, "expiry_day", None) is None:
+                b.expiry_day = current_day + self.horizon_days + self.min_shelf_life + 60
+                logger.warning(
+                    f"Batch {b_id} missing expiry_day; defaulting to nominal shelf-life."
+                )
+
         # 1. Precalculate availability and need per (hospital, medicine)
         avail: Dict[Tuple[str, str], int] = {}
         need: Dict[Tuple[str, str], int] = {}
@@ -89,7 +126,7 @@ class RedistributionOptimizer:
                 key = (h_id, m_id)
                 # Current active valid stock
                 active_batches = [
-                    b for b in batches.values()
+                    b for b in effective_batches.values()
                     if b.hospital_id == h_id and b.medicine_id == m_id and b.is_valid and b.expiry_day > current_day
                 ]
                 current_stock = sum(b.current_quantity for b in active_batches)
@@ -99,7 +136,7 @@ class RedistributionOptimizer:
                 est_daily = max(0.5, predicted_demand.get(key, max(1.0, (hosp.bed_count / 50.0) * med.criticality * 2.0)))
                 # Reorder threshold: only trigger deficit if inventory position drops below safety stock buffer
                 reorder_threshold = int(est_daily * safety_stock_days)
-                target_stock = int(est_daily * (safety_stock_days + min(self.horizon_days, 3)))
+                target_stock = int(est_daily * (safety_stock_days + min(self.horizon_days, 7)))
 
                 # Need accounts for in-transit arrivals (prevents bullwhip duplicate orders)
                 if inventory_pos < reorder_threshold:
@@ -107,8 +144,8 @@ class RedistributionOptimizer:
                 else:
                     need[key] = 0
 
-                # Availability = surplus stock strictly above local consumption + safety buffer
-                min_reserve = int(est_daily * (safety_stock_days + min(self.horizon_days, 7)))
+                # Availability = surplus stock strictly above local consumption + safety buffer over horizon
+                min_reserve = int(math.ceil(est_daily * (safety_stock_days + self.horizon_days)))
                 avail[key] = max(0, current_stock - min_reserve)
 
         # 1b. Precalculate expected local consumption under FEFO to identify at-risk expiring batches
@@ -117,7 +154,7 @@ class RedistributionOptimizer:
             for m_id in medicines:
                 hosp_batches = sorted(
                     [
-                        b for b in batches.values()
+                        b for b in effective_batches.values()
                         if b.hospital_id == h_id and b.medicine_id == m_id and b.is_valid and b.current_quantity > 0 and b.expiry_day > current_day
                     ],
                     key=lambda b: b.expiry_day,
@@ -150,13 +187,21 @@ class RedistributionOptimizer:
                 req = need.get((j_id, m_id), 0)
                 u_var = solver.IntVar(0, req, f"u_{j_id}_{m_id}")
                 u_vars[(j_id, m_id)] = u_var
-                # Shortage penalty: heavily penalized by price, criticality, and rural status
+                # Shortage penalty: heavily penalized by price, criticality, rural status, and urgency
                 rural_weight = 1.5 if dst_hosp.is_rural else 1.0
-                shortage_cost = med.price * med.criticality * rural_weight * 100.0
+                curr_stock = sum(
+                    b.current_quantity for b in effective_batches.values()
+                    if b.hospital_id == j_id and b.medicine_id == m_id and b.is_valid and b.expiry_day > current_day
+                )
+                est_d = max(0.5, predicted_demand.get((j_id, m_id), 1.0))
+                days_cover = curr_stock / est_d
+                # Urgency multiplier for acute stockouts
+                urgency_weight = 3.0 if curr_stock <= 0 else (2.0 if days_cover < 2.0 else (1.5 if days_cover < safety_stock_days else 1.0))
+                shortage_cost = med.price * med.criticality * rural_weight * 100.0 * urgency_weight
                 objective.SetCoefficient(u_var, shortage_cost)
 
         for b_id, at_risk_qty in at_risk_units.items():
-            b = batches[b_id]
+            b = effective_batches[b_id]
             med = medicines[b.medicine_id]
             w_var = solver.IntVar(0, at_risk_qty, f"w_{b.hospital_id}_{b.medicine_id}_{b_id}")
             w_vars[b_id] = w_var
@@ -185,7 +230,7 @@ class RedistributionOptimizer:
 
                     # Active batches at source hospital
                     candidate_batches = [
-                        b for b in batches.values()
+                        b for b in effective_batches.values()
                         if b.hospital_id == i_id and b.medicine_id == m_id and b.is_valid and b.current_quantity > 0
                     ]
 
@@ -220,7 +265,7 @@ class RedistributionOptimizer:
 
         # C2: Batch Capacity Constraint
         # Sum of transfers out of batch b to all destinations <= batch current_quantity
-        for b_id, b in batches.items():
+        for b_id, b in effective_batches.items():
             if b.is_valid and b.current_quantity > 0:
                 batch_out = [
                     x_var for (si, dj, sm, sb), x_var in x_vars.items()
@@ -294,6 +339,26 @@ class RedistributionOptimizer:
                     base_transit = int(math.ceil(base_transit * rural_transit_multiplier))
                 trans_days = max(1, base_transit)
                 cost = self.fixed_transport_cost + (self.cost_per_km * dist)
+                b = effective_batches.get(sb)
+                b_exp = b.expiry_day if b else None
+                tgt_need = need.get((dj, sm), 0)
+
+                # Formulate transparent operational explanation
+                shelf_at_arrival = (b_exp - (current_day + trans_days)) if b_exp is not None else 999
+                med_obj = medicines.get(sm)
+                med_name = f"{med_obj.name} ({sm})" if med_obj else sm
+                src_name = f"{hospitals[si].name} ({si})" if si in hospitals else si
+                dst_name = f"{hospitals[dj].name} ({dj})" if dj in hospitals else dj
+
+                exp_urgency = "near-expiry batch prioritized to prevent write-off" if (b_exp is not None and b_exp <= current_day + self.horizon_days + safety_stock_days) else "standard shelf-life batch"
+
+                reason = (
+                    f"Redistributed {qty} units of {med_name} from {src_name} to {dst_name}: "
+                    f"fulfills urgent shortage (target deficit {tgt_need} units); "
+                    f"transit takes {trans_days}d leaving {shelf_at_arrival}d shelf life ({exp_urgency}); "
+                    f"estimated transport cost ₹{cost:.1f}."
+                )
+
                 recommendations.append(TransferRecommendation(
                     from_hospital=si,
                     to_hospital=dj,
@@ -303,6 +368,9 @@ class RedistributionOptimizer:
                     transit_days=trans_days,
                     distance_km=round(dist, 2),
                     estimated_transport_cost=round(cost, 2),
+                    target_shortage=tgt_need,
+                    batch_expiry=b_exp,
+                    reason=reason,
                 ))
 
         # 6. Post-Solve Plan Validation (Mandatory Audit)
@@ -310,7 +378,7 @@ class RedistributionOptimizer:
             transfers=recommendations,
             avail_map=avail,
             need_map=need,
-            batches_map=batches,
+            batches_map=effective_batches,
             hospitals_map=hospitals,
             current_day=current_day,
         )
